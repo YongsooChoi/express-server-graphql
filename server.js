@@ -5,40 +5,60 @@ var { ruruHTML } = require("ruru/server");
 
 // Construct a schema, using GraphQL schema language
 var schema = buildSchema(/* GraphQL */ `
-  type RandomDie {
-    numSides: Int!
-    rollOnce: Int!
-    roll(numRolls: Int!): [Int]
+  input MessageInput {
+    content: String
+    author: String
+  }
+
+  type Message {
+    id: ID!
+    content: String
+    author: String
   }
 
   type Query {
-    getDie(numSides: Int): RandomDie
+    getMessage(id: ID!): Message
+  }
+
+  type Mutation {
+    createMessage(input: MessageInput): Message
+    updateMessage(id: ID!, input: MessageInput): Message
   }
 `);
 
-// This class implements the RandomDie GraphQL type
-class RandomDie {
-  constructor(numSides) {
-    this.numSides = numSides;
-  }
-
-  rollOnce() {
-    return 1 + Math.floor(Math.random() * this.numSides);
-  }
-
-  roll({ numRolls }) {
-    var output = [];
-    for (var i = 0; i < numRolls; i++) {
-      output.push(this.rollOnce());
-    }
-    return output;
+// If Message had any complex fields, we'd put them on this object.
+class Message {
+  constructor(id, { content, author }) {
+    this.id = id;
+    this.content = content;
+    this.author = author;
   }
 }
 
-// The root provides the top-level API endpoints
+// Maps username to content
+var fakeDatabase = {};
+
 var root = {
-  getDie({ numSides }) {
-    return new RandomDie(numSides || 6);
+  getMessage({ id }) {
+    if (!fakeDatabase[id]) {
+      throw new Error("no message exists with id " + id);
+    }
+    return new Message(id, fakeDatabase[id]);
+  },
+  createMessage({ input }) {
+    // Create a random id for our "database".
+    var id = require("crypto").randomBytes(10).toString("hex");
+
+    fakeDatabase[id] = input;
+    return new Message(id, input);
+  },
+  updateMessage({ id, input }) {
+    if (!fakeDatabase[id]) {
+      throw new Error("no message exists with id " + id);
+    }
+    // This replaces all old data, but some apps might want partial update.
+    fakeDatabase[id] = input;
+    return new Message(id, input);
   },
 };
 
@@ -62,6 +82,25 @@ app.get("/", (_req, res) => {
   res.end(ruruHTML({ endpoint: "/graphql" }));
 });
 
+// mutation {
+//   createMessage(input: {
+//     author: "andy",
+//     content: "hope is a good thing",
+//   }) {
+//     id
+//   }
+// }
+
+var author = "andy";
+var content = "hope is a good thing";
+var query = /* GraphQL */ `
+  mutation CreateMessage($input: MessageInput) {
+    createMessage(input: $input) {
+      id
+    }
+  }
+`;
+
 fetch("/graphql", {
   method: "POST",
   headers: {
@@ -69,15 +108,13 @@ fetch("/graphql", {
     Accept: "application/json",
   },
   body: JSON.stringify({
-    query: `
-  query RollDice {
-  getDie(numSides: 6) {
-    rollOnce
-    roll(numRolls: 3)
-  }
-}
-`,
-    variables: { dice, sides },
+    query,
+    variables: {
+      input: {
+        author,
+        content,
+      },
+    },
   }),
 })
   .then((r) => r.json())
