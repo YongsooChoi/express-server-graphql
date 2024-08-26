@@ -4,33 +4,45 @@ var { buildSchema } = require("graphql");
 var { ruruHTML } = require("ruru/server");
 
 // Construct a schema, using GraphQL schema language
-var schema = buildSchema(`
+var schema = buildSchema(/* GraphQL */ `
+  type RandomDie {
+    numSides: Int!
+    rollOnce: Int!
+    roll(numRolls: Int!): [Int]
+  }
+
   type Query {
-    quoteOfTheDay: String
-    random: Float!
-    rollDice(numDice: Int!, numSides: Int): [Int]
+    getDie(numSides: Int): RandomDie
   }
 `);
 
-// The root provides a resolver function for each API endpoint
-var root = {
-  quoteOfTheDay() {
-    return Math.random() < 0.5 ? "Take it easy" : "Salvation lies within";
-  },
-  random() {
-    return Math.random();
-  },
-  rollDice({ numDice, numSides }) {
+// This class implements the RandomDie GraphQL type
+class RandomDie {
+  constructor(numSides) {
+    this.numSides = numSides;
+  }
+
+  rollOnce() {
+    return 1 + Math.floor(Math.random() * this.numSides);
+  }
+
+  roll({ numRolls }) {
     var output = [];
-    for (var i = 0; i < numDice; i++) {
-      output.push(1 + Math.floor(Math.random() * (numSides || 6)));
+    for (var i = 0; i < numRolls; i++) {
+      output.push(this.rollOnce());
     }
     return output;
+  }
+}
+
+// The root provides the top-level API endpoints
+var root = {
+  getDie({ numSides }) {
+    return new RandomDie(numSides || 6);
   },
 };
 
 var app = express();
-
 // Create and use the GraphQL handler.
 app.all(
   "/graphql",
@@ -50,22 +62,23 @@ app.get("/", (_req, res) => {
   res.end(ruruHTML({ endpoint: "/graphql" }));
 });
 
-// var dice = 3
-// var sides = 6
-// var query = /* GraphQL */`query RollDice($dice: Int!, $sides: Int) {
-//   rollDice(numDice: $dice, numSides: $sides)
-// }`
-
-// fetch("/graphql", {
-//   method: "POST",
-//   headers: {
-//     "Content-Type": "application/json",
-//     Accept: "application/json",
-//   },
-//   body: JSON.stringify({
-//     query,
-//     variables: { dice, sides },
-//   }),
-// })
-//   .then(r => r.json())
-//   .then(data => console.log("data returned:", data))
+fetch("/graphql", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
+  body: JSON.stringify({
+    query: `
+  query RollDice {
+  getDie(numSides: 6) {
+    rollOnce
+    roll(numRolls: 3)
+  }
+}
+`,
+    variables: { dice, sides },
+  }),
+})
+  .then((r) => r.json())
+  .then((data) => console.log("data returned:", data));
